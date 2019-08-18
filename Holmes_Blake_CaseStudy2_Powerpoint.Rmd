@@ -1,0 +1,208 @@
+---
+title: "DDSAnalytics Employee Attrition Analysis"
+author: "Blake Holmes" 
+date: August 18, 2019
+output:
+  beamer_presentation:
+    theme: "Berlin"
+---
+
+```{r setup_ppt, include=FALSE}
+library(knitr)
+library(kableExtra)
+knitr::opts_chunk$set(echo = FALSE)
+
+#pull in other Rmarkdown files to get data 
+ksource <- function(x, ...) {
+  library(knitr)
+  source(purl(x, output = tempfile(),quiet=TRUE), ...)
+}
+
+```
+
+```{r get_analysis, include=FALSE, echo=FALSE, cache=FALSE}
+#IMPORT ANALYSIS
+ksource("./Holmes_Blake_CaseStudy2_Analysis.Rmd")
+```
+
+## Agenda
+
+### An Analysis of Employee Attrition
+
+- Understand Employee Attrition
+- Predict future attrition & salaries
+- Next Steps
+- link to Youtube Video [Youtube Video](https://youtu.be/6x3NGn5NUvs)
+
+## The Data Set
+
+```{r explanatory data, echo=FALSE}
+
+total_rows<-nrow(att_pruned)
+
+total_attrition_perc<-100*round(sum(att_pruned$Attrition==1)/nrow(att_pruned),2)
+```
+There were a total of `r total_rows` employees observed in the analysis, of which `r total_attrition_perc`% were lost to attrition. 
+
+<br />
+```{r variable_type_table, echo=FALSE}
+
+variable_type_table %>%
+  kable() %>% 
+  kable_styling("striped") %>%
+  row_spec(0, bold = "T")
+```
+
+## Attrition Classifier Tool
+```{r, echo=FALSE}
+acc_table<-ensembleClassifyResults$Accuracies %>% 
+    data.frame() 
+
+acc_table %>% 
+  rename("Accuracy"=".") %>% 
+  mutate(Model=str_to_title(rownames(acc_table))) %>%
+  select(Model,everything()) %>% 
+  arrange(desc(Accuracy)) %>% 
+  mutate("Rank"=row_number()) %>%
+  select("Rank","Accuracy", everything()) %>%
+  kable()%>% 
+  kable_styling("striped") %>%
+  row_spec(0, bold = "T")
+
+```
+`r ensembleClassifyResults$WINNER_DESCRIPTION` 
+
+## Attrition Top 6 Important Features
+```{r, echo=FALSE}
+head(ensembleClassifyResults$WINNER_IMPORTANCE, addrownums = TRUE) %>%
+  mutate("Rank"=row_number()) %>%
+  select("Rank", everything()) %>% 
+  kable()%>% 
+  kable_styling("striped") %>%
+  row_spec(0, bold = "T")
+```
+
+## Attrition Bottom 6 Important Features
+```{r, echo=FALSE}
+feature_count<-nrow(ensembleClassifyResults$WINNER_IMPORTANCE)
+
+tail(ensembleClassifyResults$WINNER_IMPORTANCE) %>% 
+  as_tibble()%>%
+  mutate(Rank=(feature_count-5):feature_count) %>% 
+  select("Rank", everything()) %>% 
+  kable() %>% 
+  kable_styling("striped") %>%
+  row_spec(0, bold = "T")
+```
+
+## Salary Projections Tool
+
+```{r, echo=FALSE}
+rmse_table<-ensembleRegressionResults$RMSE_results %>% 
+    data.frame() 
+
+rmse_table %>% 
+  rename("Root Mean-Squared Error"=".") %>% 
+  mutate(Model=rownames(rmse_table)) %>%
+  select(Model,everything()) %>% 
+  arrange(`Root Mean-Squared Error`) %>%
+  mutate("Rank"=row_number()) %>%
+  select("Rank", everything(),Model) %>% 
+  mutate(`Root Mean-Squared Error`=paste0("$",round(`Root Mean-Squared Error`,0))) %>%
+  kable()%>% 
+  kable_styling("striped") %>%
+  row_spec(0, bold = "T")
+```
+`r ensembleRegressionResults$WINNER_DESCRIPTION` 
+
+## Salary Top 6 Important Features 
+```{r, echo=FALSE}
+head(ensembleRegressionResults$WINNER_IMPORTANCE) %>% 
+  mutate("Rank"=row_number()) %>%
+  select("Rank", everything()) %>% 
+  kable()%>% 
+  kable_styling("striped") %>%
+  row_spec(0, bold = "T")
+```
+
+## Salary Bottom 6 Important Features 
+```{r, echo=FALSE}
+tail(ensembleRegressionResults$WINNER_IMPORTANCE) %>%
+  mutate(Rank=(feature_count-5):feature_count) %>% 
+  select("Rank", everything()) %>% 
+  kable()%>% 
+  kable_styling("striped") %>%
+  row_spec(0, bold = "T")
+```
+
+## Employee Salary Histogram by Attrition
+
+```{r, echo=FALSE,fig.height = 8, fig.align='center'}
+
+ggplot(att_pruned, aes(x=MonthlyIncome, fill = Attrition)) + 
+   geom_histogram(alpha = 0.5, aes(), position = 'identity',bins=30) + 
+    scale_fill_discrete(name = "Attrition", labels = c("No", "Yes")) + 
+    theme(text =element_text(size = 30), plot.margin=unit(c(0,0,6,0),"cm")) + 
+    xlab("Monthly Income ($)") 
+
+```
+
+## Salary Compared by Attrition
+
+- Employees retained had a mean salary of $`r TTEST_ATT_SALARY$estimate[1]`
+
+- Employees lost due to attrition had a mean salary of $`r round(TTEST_ATT_SALARY$estimate[2])`
+</br>
+
+```{r, echo=FALSE}
+salaryAttrition %>%
+  group_by(Attrition) %>%
+  summarise(mean(predictMinusObservered, na.rm=TRUE)) %>% 
+  rename("Actual vs Predicted Income($)"=2) %>%
+  mutate("Actual vs Predicted Income($)"= -1*round(`Actual vs Predicted Income($)`,2)) %>%  #*-1 to make it actuals subtract predicted
+  mutate(Attrition=ifelse(Attrition==1,"Yes","No")) %>% kable()
+```
+
+## Predicted Salary versus Actual Plot
+
+```{r, echo=FALSE}
+salary_predictVSactual_attritionPLOT + 
+  xlab("Predicted Monthly Income($)") + 
+  ylab("Actual Monthly Income($)")+ scale_color_discrete(name = "Attrition", labels = c("No","Yes")) + 
+  theme(plot.margin=unit(c(0,0,5,0),"cm")) 
+```
+
+## Attrition in Protected Classes 
+
+```{r protected class, echo=FALSE}
+
+protectedClassesPLOT + theme(text =element_text(size = 15), plot.margin=unit(c(0,0,6,0),"cm")) +scale_x_discrete(labels=c("0" = "No", "1" = "Yes"))
+
+```
+[Equal Employment Opportunity Commision](https://www.eeoc.gov/laws/types/)
+
+## Attrition in Protected Classes 
+
+```{r protected class 2, echo=FALSE}
+protectedClassStats %>% rename(Female=pct_female,
+                               "Over 40"=over_40) %>% 
+                                mutate(Attrition=ifelse(Attrition==1,"Yes","No")) %>% 
+                                mutate('Average Age'=round(avg_age,1)) %>% 
+                                select(-avg_age) %>% 
+                                kable()%>% 
+                                kable_styling("striped") %>%
+                                row_spec(0, bold = "T")
+                                
+```
+
+## Future Projections
+
+`r FUTURE_SALARIES_DESCRIPTION` 
+
+`r FUTURE_ATT_DESCRIPTION`
+
+## Next Steps
+
+1. Pilot attrition intervention program on "at-risk" employees.
+2. Gather more subjective or perception-based data.
+3. Further analysis and Data Modeling.

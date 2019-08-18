@@ -1,0 +1,27 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1566112970041.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1800316500",
+    "id" : "29BA04EF",
+    "lastKnownWriteTime" : 1566152252,
+    "last_content_update" : 1566152252493,
+    "path" : "~/Library/Mobile Documents/com~apple~CloudDocs/DataScience/Doing Data Science/Unit_14/Case-study-2/Holmes_Blake_CaseStudy2_Powerpoint.Rmd",
+    "project_path" : "Holmes_Blake_CaseStudy2_Powerpoint.Rmd",
+    "properties" : {
+        "cursorPosition" : "0,0",
+        "last_setup_crc32" : "",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

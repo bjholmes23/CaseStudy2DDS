@@ -1,0 +1,49 @@
+
+#CASE STUDY 2
+
+  DUE Saturday, August 17 at 11:59pm (Week 15)
+
+  Maximum of 5 minutes
+
+##GRADE
+
+  35% RMarkdown File
+  35% Final Video Presentation (25% slide content, 25% presentation)
+    Minimal Stumbles / mis statements / etc.  if you trip up more than a couple of times, reshoot the video.
+    Labeled Plots
+    5-minute time limit
+    Correct interpretation
+    Complete analysis – this means adding pvalues and conducting tests where appropriate (I expect
+  everyone to have a good handle on at least t-tests, KNN and Naïve Bayes classification and KNN and linear regression to this point.
+  10% Validation Requirement for Attrition(Sensitivity and Specificity > 60%)
+  10% Validation Requirement for Salary(RMSE < $3000)
+  10% Creativity and completeness in presentation and analysis.
+
+##AUDIENCE
+
+  your audience is the CEO and CFO of Frito Lay (your client)
+
+  CEO is a statistician and the CFO has had only one class in statistics
+
+##GOAL
+  Identify factors that contribute to turnover
+    -Create derived attributes/variables/features
+
+  Job Role specific trends (e.g., “Data Scientists have the highest job satisfaction”)
+    - Interesting trends or observations
+
+  Experimentation and visualization
+
+  Include labeled data from competition set
+
+
+##MODELING
+
+  Classifying attrition you must use k-NN or Naive Bayes but can also use logisitc regresion, random forest, LDA, SVM)
+
+  Regression as well, linear regression, LASSO, random forest, enseble models
+
+##DATA
+
+  Competition set (300 observations no labels)
+

@@ -1,0 +1,549 @@
+---
+title: "Case Study 2"
+output: html_document
+---
+
+##SETUP
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(skimr) 
+library(pander)
+```
+
+##USEFUL FUNCTIONS
+```{r Useful Functions, echo=TRUE}
+#COMPUTES Root mean squared error for predicted values versus actual values
+RMSE = function(predictions, actuals){
+  sqrt(mean((predictions - actuals)^2))
+}
+
+#TAKES A confusionMatrix and returns an accuracy calcultation for a classifer
+accuracy <- function(confusionMatrix){paste0(round(sum(diag(confusionMatrix)/(sum(rowSums(confusionMatrix)))) * 100,2),"%")}
+
+```
+
+##Load Data
+```{r Get Data, echo=TRUE}
+
+att<-read_csv("CaseStudy2-data.csv") 
+competition_no_att<-read_csv("CaseStudy2CompSet No Attrition.csv")
+competition_no_salary<-read_excel("CaseStudy2CompSet No Salary.xlsx")
+
+```
+
+##Explore Data
+```{r Explore Data, echo=TRUE}
+glimpse(att)
+summary(att)
+
+head(att,6)
+tail(att,6)
+
+#VIEW character variables
+att  %>% select_if(~class(.) == 'character')
+#{TODO BJH } turn some of these to factors or binary 
+
+#VIEW non-character variables
+att  %>% select_if(~class(.) != 'character') %>% head(1)
+#{TODO BJH } turn some of these to factors or binary 
+
+##Percentage of missing values in dataset
+paste0("The total number of observations is: ", nrow(att))
+
+#Calculate percentage missing values for every column
+getPercentMissing<-function(df){
+  df %>% 
+  summarise_all(funs(100*sum(is.na(.))/nrow(att))) %>% #count the number of NAs or blanks divided by total rows
+  round(2) %>% 
+  lapply(function(x){paste0(x,"%")}) %>%
+  as_tibble()
+}
+
+skim(att) %>% pander()
+
+print(getPercentMissing(att))
+#no missing values 
+
+getPercentMissing(competition_no_att)
+#no missing values 
+
+getPercentMissing(competition_no_salary)
+#no missing values 
+
+#No missing values
+att %>% 
+  summarise_all(funs(sum(is.na(.))))
+
+```
+
+##Codebook
+```{r Generate Codebook, echo=TRUE}
+
+library(dataMaid)
+
+#makeCodebook(att, replace=TRUE)
+```
+
+##Perform Transfomations & Trim unuseful features
+```{r Perform Transformation, echo=TRUE}
+
+#REMOVE UNUSEFUL VARIABLES AND ATTRITION TO BINARY
+att_pruned<-att %>% select(-EmployeeCount, -Over18,-StandardHours,-ID,-EmployeeNumber) %>% 
+                mutate(Attrition=as.factor(as.integer(ifelse(Attrition=="No", 0, 1))))
+
+competition_no_att_pruned<- competition_no_att %>% 
+  select(-EmployeeCount, -Over18,-StandardHours,-ID,-EmployeeNumber)
+
+competition_no_salary_pruned<- competition_no_salary %>% 
+  select(-EmployeeCount, -Over18,-StandardHours,-ID,-EmployeeNumber) %>%
+  mutate(Attrition=as.factor(as.integer(ifelse(Attrition=="No", 0, 1))))
+
+
+library(knitr)
+library(kableExtra)
+
+variable_type_table<-sapply(att_pruned,class) %>% 
+  as.character() %>%
+  gsub("factor", "Attrition", .) %>%
+  gsub("character", "Categorical", .)%>%
+  gsub("integer", "Numeric", .) %>%
+  table() %>% 
+  as_tibble(n="Count") %>% 
+  rename("Data"=".")
+
+```
+
+##Check Correlations
+```{r check correlations, echo=TRUE}
+library(corrplot)
+correlator  <-  function(df){
+	df %>%
+		keep(is.numeric) %>%
+		tidyr::drop_na() %>%
+		cor %>%
+		corrplot( addCoef.col = "white", number.digits = 2,
+			 number.cex = 0.5, method="square",
+			 order="hclust", title="Variable Corr Heatmap",
+			 tl.srt=45, tl.cex = 0.8)
+}
+correlator(att_pruned)
+```
+
+##Create Training and Validation Data Sets
+```{r prepare training/test, echo=TRUE}
+
+getRandomSampleIndex<-function(df,percent=0.2){
+  sample.int(n = nrow(df), size = floor(percent*nrow(df)), replace = F)
+}
+
+#split dataframe into train & validation sets. Returns a list
+splitTrainValidation<-function(df){
+  randomSampleIndex<-getRandomSampleIndex(df)
+  validationSet<-df[randomSampleIndex,]
+  trainingSet<-df[-randomSampleIndex,]
+  ret<-list(df,validationSet,trainingSet)
+  names(ret)<-c("data", "validationSet", "trainingSet")
+  return(ret)
+}
+
+trainValidation<-splitTrainValidation(att_pruned)
+
+trainValidationSet<-trainValidation$data
+trainSet<-trainValidation$trainingSet
+validationSet<-trainValidation$validationSet
+
+```
+
+##Create Dummy Variables
+```{r create dummy variable data sets, echo=TRUE}
+#create dummy variables
+library(fastDummies)
+train_dummies<-dummy_cols(trainSet) %>% 
+  select_if(is.integer) %>%
+  select(-Attrition_0) %>% 
+  rename(Attrition=Attrition_1)
+
+validation_dummies<-dummy_cols(validationSet) %>% 
+  select_if(is.integer) %>%
+  select(-Attrition_0) %>% 
+  rename(Attrition=Attrition_1)
+
+competition_no_att_dummies<-dummy_cols(competition_no_att_pruned) %>% 
+    select_if(is.integer)
+
+competition_no_salary_dummies<-dummy_cols(competition_no_salary_pruned) %>% 
+    select_if(is.integer)
+
+```
+
+##TRANSFORM TO Factors
+```{r convert characters to factors, echo=TRUE}
+#run all character variables to factors 
+trainSetFact<-trainSet %>% mutate_if(is.character, as.factor)
+validationSetFact<-validationSet %>% mutate_if(is.character, as.factor)
+competition_no_att_fact<-competition_no_att %>% mutate_if(is.character, as.factor)
+competition_no_salary_fact<- competition_no_salary%>% mutate_if(is.character, as.factor)
+
+```
+
+#CLASSIFY ATTRITION
+
+##CLASSIFIER ENSEMBLE
+
+```{r ensemble Classifier Function, echo=TRUE}
+
+#FUNCTION TAKES A TRAINING, VALIDATION SET, and FIELDNAME 
+#And performs ensemble regression on it
+#Determines which model is the most accurate
+ensembleClassify <- function(train,validation,fieldname){
+
+#Functions
+  cleanColumnNames<-function(df){
+      str_replace_all(names(train_dummies), c(" " = "_" , "," = "" )) %>%
+                                str_replace_all(c("&" = "_" , "," = "" )) %>% 
+                                str_replace_all(c("-" = "_" , "," = "" )) %>% 
+                                return()
+  }
+  
+  normalize <- function(x) {
+    return ((x - min(x)) / (max(x) - min(x)))
+  }
+  
+#Set variables/ prep data
+  trainFact<-train %>% mutate_if(is.character, as.factor)
+  validationFact<-validation %>% mutate_if(is.character, as.factor)
+  trainObserved<-train %>% select(fieldname) %>% unlist() %>% as.integer %>% -1 #R is turning 0's to 1s
+  validationObserved<-validation %>% select(fieldname) %>% unlist() %>% as.integer() %>% -1 #R is turning 0's to 1s
+  f<- as.formula(paste(fieldname, " ~ ."))
+  
+  train_dummies<-dummy_cols(train) %>% 
+    select_if(is.integer) %>%
+    select(-Attrition_0) %>% 
+    rename(Attrition=Attrition_1)
+
+  validation_dummies<-dummy_cols(validation) %>% 
+    select_if(is.integer) %>%
+    select(-Attrition_0) %>% 
+    rename(Attrition=Attrition_1)
+
+#Clean dataset for NN
+  library(class)
+  train_dummies_clean<-train_dummies
+  names(train_dummies_clean)<-cleanColumnNames(train_dummies_clean)
+  validation_dummies_clean<-cleanColumnNames(validation_dummies)
+  validation_dummies_clean<-validation_dummies
+  names(validation_dummies_clean)<-cleanColumnNames(validation_dummies_clean)
+  #because `fieldname, " ~ ."` doesn't work for the nerual network, and special characters cause issues
+  # for(i in 1:length(train_dummies_clean)-1){
+  #   f_nn <- as.formula(paste("Attrition ~", paste(names(train_dummies_clean %>% select(-Attrition))[1:i], collapse = " + ")))
+  # }
+  # 
+#NAIVE BAYES
+  library(e1071)
+  Naive_Bayes_Model=naiveBayes(f, data=train)
+
+  NB_Training_Predictions=predict(Naive_Bayes_Model,validation)
+  
+#K-Nearest Neighbors(KNN)
+  #KNN needs categorical variables to be converted to dummy variables
+  KNN_Prediction<- knn(train=train_dummies %>% select(-fieldname),
+                                test=validation_dummies %>% select(-fieldname), 
+                                cl=trainObserved, 
+                                k=2, 
+                                prob=TRUE)
+  
+#RANDOM FOREST 
+  #fun fact,  if Attrition is provided as a factor, classification is assumed, otherwise regression is assumed. If omitted, randomForest will run in unsupervised mode.
+  library(randomForest)
+  rfModel <- randomForest(f, 
+                          data = trainFact,
+                          ntree = 500, 
+                          mtry = 6,
+                          importance = TRUE)
+  
+  RF_Results <- predict(rfModel, validationFact, type = "class")
+
+#NEURAL NETWORK CLASSIFIER
+  library(neuralnet)
+  
+  #normalizing the data first because I randomly read it was a good idea. 
+  train_normalized <- as.data.frame(lapply(train_dummies_clean, normalize))
+  nn <- neuralnet(f,data=train_normalized , hidden=c(2,1), linear.output=FALSE, threshold=0.01)
+  names(validation_dummies_clean)<-cleanColumnNames(validation_dummies_clean)
+  validation_normalized <- as.data.frame(lapply(validation_dummies_clean, normalize))
+  NN_results <- compute(nn, validation_normalized)
+  NN_roundedresults<-round(NN_results$net.result,0)
+  
+##PULL IT ALL TOGETHER ENSEMBLE STYLE
+    # #ENSEMBLE PREDICTIONS
+    Predictions<-data.frame(
+           "actual"=validationObserved,
+           "neuralnetwork"=NN_roundedresults,
+           "randomforest"=RF_Results,
+           "knn"=KNN_Prediction,
+           "naive_bayes"=NB_Training_Predictions
+           ) %>%
+      mutate_if(is.factor, as.character) %>% 
+      mutate_if(is.character, as.integer) %>% 
+      rowwise() %>%
+      mutate(
+              ensemble_count = sum(neuralnetwork,randomforest,knn,naive_bayes)
+            ) %>%
+      mutate(ensemble_vote=ifelse(ensemble_count>=2,1,0)) #if 1/2 or more then vote YES
+    
+    Accuracies<-apply(Predictions %>% select(-actual, -ensemble_count),
+                        MARGIN=2,
+                        FUN=function(x) accuracy(table(x,validationObserved))
+                        ) 
+    #MODELS
+    Models<-list(
+      "neuralnetwork"=nn,
+      "randomforest"=rfModel,
+      "knn"=NA, #not sure how to get the model for this yet
+      "naive_bayes"=Naive_Bayes_Model
+      #also i'm not sure how to return the ensemble models
+    )
+    
+    #WINNER IS MODEL WITH BEST ACCURACY
+    WINNER_NAME <- names(which(Accuracies == max(Accuracies)))
+    WINNER_ACCURACY <- paste0("",max(Accuracies))
+    WINNER_DESCRIPTION<-paste(str_to_title(WINNER_NAME), " had the best classification rate of ", WINNER_ACCURACY)
+    WINNER_MODEL=get(WINNER_NAME,Models)
+    WINNER_IMPORTANCE<- importance(WINNER_MODEL) %>% 
+      as.data.frame() %>% 
+      select(3) %>% mutate(Variable=rownames(.)) %>% 
+      arrange(desc(MeanDecreaseAccuracy))
+    # 
+    # #LOSER IS MODEL WITH WORSE RMSE
+    LOSER_NAME <- names(which(Accuracies == min(Accuracies)))
+    LOSER_ACCURACY <- paste0("",min(Accuracies))
+    LOSER_DESCRIPTION<-paste0(str_to_title(LOSER_NAME), " had the worst classification rate of ", LOSER_ACCURACY)
+
+    list("Predictions"=Predictions,
+         "Models"=Models,
+         "Accuracies"=Accuracies,
+         "WINNER_NAME"=WINNER_NAME,
+         "WINNER_ACCURACY"=WINNER_ACCURACY,
+         "WINNER_DESCRIPTION"=WINNER_DESCRIPTION,
+         "WINNER_MODEL"=WINNER_MODEL,
+         "WINNER_Predictions"=get(WINNER_NAME, Predictions),
+         "WINNER_IMPORTANCE"=WINNER_IMPORTANCE,
+         "LOSER_NAME"=LOSER_NAME,
+         "LOSER_ACCURACY"=LOSER_ACCURACY,
+         "LOSER_DESCRIPTION"=LOSER_DESCRIPTION,
+         "LOSER_MODEL"=get(LOSER_NAME,Models),
+         "LOSER_Predictions"=get(LOSER_NAME, Predictions)
+         )
+}
+
+ensembleClassifyResults<-ensembleClassify(trainSet, trainValidationSet, "Attrition")
+ensembleClassifyResults
+```
+
+
+#PREDICTING THE SALARY FIELD
+
+##Ensemble Regression Function
+```{r ensemble Regression Function, echo=TRUE}
+
+#FUNCTION TAKES A TRAINING, VALIDATION SET, and FIELDNAME 
+#And performs ensemble regression on it
+#Determines which model is the most accurate
+ensemblePrediction <- function(train,validation,fieldname){
+  
+  #Set variables 
+  trainObserved<-train %>% select(fieldname) %>% unlist() %>% as.double()
+  validationObserved<-validation %>% select(fieldname) %>% unlist() %>% as.integer()
+  
+  #Create factor dataset for random forest
+  trainFactors<-train %>% mutate_if(is.character, as.factor)
+  validationFactors<-validation %>% mutate_if(is.character, as.factor)
+  
+  #Multiple Linear Regression
+  f<- as.formula(paste(fieldname, " ~ ."))
+  LM_Model<-lm(formula=f, data = train)
+  LM_Predictions<-predict(LM_Model, validation %>% select(-fieldname))
+  
+  #LASSO REGRESSION
+  library(glmnet)
+  
+  lasso_train_features<-model.matrix(f, train)[,-1]
+  lasso_validation_features<-model.matrix(f, validation)[,-1] 
+  lambda_seq <- 10^seq(2, -2, by = -.1)
+ 
+  cv_output <- cv.glmnet(lasso_train_features,
+                         trainObserved,
+                         alpha = 1,
+                         lambda = lambda_seq)
+
+  best_lam <- cv_output$lambda.min
+
+  lasso_best <- glmnet(lasso_train_features,
+                         trainObserved,
+                         alpha = 1,
+                         lambda = best_lam)
+  
+  lasso_predictions <- predict(lasso_best, s = best_lam, newx = lasso_validation_features)
+  
+    #RANDOM FOREST REGRESSION
+    rfRegressionModel <- randomForest(f, 
+                            data = trainFactors,
+                            ntree = 500, 
+                            mtry = 6,
+                            importance = TRUE)
+    
+    RF_predictions <- predict(rfRegressionModel, validationFactors, type = "class")
+    
+    #ENSEMBLE PREDICTIONS
+    Predictions<-data.frame(
+           "actual"=validationObserved,
+           "randomforest"=as.numeric(RF_predictions),
+           "lasso"=as.numeric(lasso_predictions),
+           "linear_regression"=as.numeric(LM_Predictions)
+           ) %>% 
+          rowwise() %>% 
+            mutate(
+                   `ensemble min`= min(randomforest, lasso, linear_regression), 
+                   `ensemble max`= max(randomforest, lasso, linear_regression), 
+                   `ensemble median` = median(c(randomforest, lasso, linear_regression)),
+                   `ensemble mean` = mean(c(randomforest, lasso, linear_regression))
+                  ) 
+    #Lets track the RMSE for each
+    RMSE_results<-apply(Predictions %>% select(-actual),
+                        MARGIN=2, 
+                        FUN=function(x) RMSE(x,validationObserved)
+                        ) %>% 
+                    round(2)
+    
+    #MODELS 
+    Models<-list(
+      "randomforest"=rfRegressionModel,
+      "lasso"=lasso_best,
+      "linear_regression"=LM_Model
+    )
+    
+    #WINNER IS MODEL WITH BEST RMSE 
+    WINNER_NAME <- names(which(RMSE_results == min(RMSE_results)))
+    WINNER_RMSE <- paste0("$",min(RMSE_results))
+    WINNER_DESCRIPTION<-paste(str_to_title(WINNER_NAME), "had the best predictive ability with a RMSE of", WINNER_RMSE)
+    WINNER_MODEL=get(WINNER_NAME,Models)
+    WINNER_IMPORTANCE<- importance(WINNER_MODEL) %>% 
+      as.data.frame() %>% 
+      select(1) %>% mutate(Variable=rownames(.)) %>% 
+      arrange(desc(`%IncMSE`))
+    #LOSER IS MODEL WITH WORSE RMSE
+    LOSER_NAME <- names(which(RMSE_results == max(RMSE_results)))
+    LOSER_RMSE <- paste0("$",max(RMSE_results))
+    LOSER_DESCRIPTION<-paste(str_to_title(LOSER_NAME), "had the worst predicitive ability with a RMSE of", LOSER_RMSE)
+    
+    list("Predictions"=Predictions,
+         "Models"=Models,
+         "trainFactors"=trainFactors,
+         "validationFactors"=validationFactors,
+         "RMSE_results"=RMSE_results,
+         "WINNER_NAME"=WINNER_NAME, 
+         "WINNER_RMSE"=WINNER_RMSE,
+         "WINNER_DESCRIPTION"=WINNER_DESCRIPTION,
+         "WINNER_MODEL"=WINNER_MODEL,
+         "WINNER_IMPORTANCE"=WINNER_IMPORTANCE,
+         "WINNER_Predictions"=get(WINNER_NAME, Predictions),
+         "LOSER_NAME"=LOSER_NAME,
+         "LOSER_RMSE"=LOSER_RMSE,
+         "LOSER_DESCRIPTION"=LOSER_DESCRIPTION,
+         "LOSER_MODEL"=get(LOSER_NAME,Models),
+         "LOSER_Predictions"=get(LOSER_NAME, Predictions)
+         )
+    
+
+}
+ensembleRegressionResults<-ensemblePrediction(trainSet, trainValidationSet, "MonthlyIncome")
+ensembleRegressionResults
+```
+
+
+##MonthlySalary versus Attrition / TTESTS 
+```{r Monthly Salary versus attrition, echo=TRUE}
+
+#using trained model to see what the model thinks MonthlyIncome should be
+ensembleRegressionresults<-ensemblePrediction(trainSet, trainValidationSet, "MonthlyIncome")
+
+#COMPARE the model predicted MonthlyIncome versus the Actual
+salaryAttrition<-trainValidationSet %>% 
+  mutate(predictMinusObservered=ensembleRegressionresults$WINNER_Predictions-MonthlyIncome) %>% 
+  select(Attrition,predictMinusObservered)
+
+# #NOT STATISTICALLY SIGNIFICANT DIFFERENCE BETWEEN ATTRITIONED AND NON ATTRITIONED PERCEIVED SALARY
+TTEST_ATT_PREDSALARYDIFFERENCE<-t.test(salaryAttrition$predictMinusObservered~trainValidationSet$Attrition, conf.level=.95) 
+
+#STATISTICALLY SIGNIFICANT DIFFERENCE BETWEEN ATTRITIONED AND NON ATTRITIONED SALARY
+TTEST_ATT_SALARY<-t.test(trainValidationSet$MonthlyIncome~trainValidationSet$Attrition, conf.level =0.99)
+
+#STATISTICALLY SIGNIFICANT DIFFERENCE BETWEEN Age AND NON ATTRITIONED SALARY
+t.test(trainValidationSet$Age~trainValidationSet$Attrition)
+
+# OUR PREDICTIONS ALSO RESULT IN STATISTICALLY SIGNIFICANT DIFFERENCES BETWEEN ATTRITION AND NON-ATTRIONED  SALARY
+t.test(ensembleRegressionresults$WINNER_Predictions~trainValidationSet$Attrition)
+
+```
+
+
+```{r data exploration via plots, echo=TRUE}
+trainValidationSet %>% 
+  ggplot(aes(x=Age, y=MonthlyIncome, color=Attrition)) + geom_point() 
+
+trainValidationSet %>% 
+  ggplot(aes(x=YearsAtCompany, y=MonthlyIncome, color=Attrition)) + geom_point()
+
+trainValidationSet %>% 
+  ggplot(aes(x=DistanceFromHome, y=MonthlyIncome, color=Attrition)) + geom_jitter() 
+
+protectedClassStats<-trainValidationSet%>% group_by(Attrition) %>% summarise(avg_age=mean(Age),
+                                                        over_40=paste0(round(sum(Age>=40) / length(Age) *100), "%"),
+                                                        pct_female=(paste0(round(sum(Gender=="Female") / length(Gender) * 100),"%")))
+protectedClassesPLOT<- trainValidationSet %>% 
+    ggplot(aes(x=Attrition, y=Age, color=Gender)) + geom_jitter() +geom_hline(yintercept=40, linetype="dashed", color = "red")
+
+salary_predictVSactual_attritionPLOT<-trainValidationSet %>% 
+  ggplot(aes(x=ensembleRegressionresults$WINNER_Predictions, y=MonthlyIncome, color=Attrition)) + geom_jitter()
+
+```
+
+```{r predictions and classifications, echo=FALSE}
+
+#PREDICT FUTURE SALARIES(montly)
+FUTURE_SALARIES_PLAN<-paste("The best statistical model for predicting monthly income is", ensembleRegressionresults$WINNER_NAME)
+FUTURE_SALARIES<-predict(ensembleRegressionresults$WINNER_MODEL,competition_no_salary_pruned %>% mutate_if(is.character,as.factor))
+FUTURE_SALARIES_MEDIAN<-median(FUTURE_SALARIES)
+FUTURE_SALARIES_PREVIOUS_MEDIAN<-median(trainValidationSet$MonthlyIncome)
+FUTURE_SALARIES_DESCRIPTION<-paste0("Using the ",ensembleRegressionresults$WINNER_NAME, " prediction model we predict a median salary of $",round(FUTURE_SALARIES_MEDIAN), ". This is an ", ifelse(FUTURE_SALARIES_MEDIAN>FUTURE_SALARIES_PREVIOUS_MEDIAN, "increase", "decrease"), " from the median observed in the historic data, which was $", round(FUTURE_SALARIES_PREVIOUS_MEDIAN))
+
+SALARY_PREDICTIONS<-cbind(MonthlyIncome=FUTURE_SALARIES, 
+      ID=competition_no_salary$ID) %>% data.frame() %>% 
+      select(ID, MonthlyIncome)
+
+write_csv(SALARY_PREDICTIONS,path='Case2PredictionsHolmes Salary.csv')
+
+
+#PREDICT FUTURE ATTRITION
+FUTURE_ATT_PLAN<-paste("The best statistical model for predicting attrition is", ensembleClassifyResults$WINNER_NAME)
+FUTURE_ATT<-predict(ensembleClassifyResults$WINNER_MODEL,competition_no_att_pruned%>% mutate_if(is.character,as.factor))
+FUTURE_ATT_RATE<-mean(FUTURE_ATT %>% as.character %>% as.integer)
+FUTURE_ATT_PERC<-paste0(round(100*FUTURE_ATT_RATE,2),"%")
+FUTURE_ATT_PREVIOUS_PERC<-paste0(100*round(sum(att_pruned$Attrition==1)/nrow(att_pruned),2),"%")
+FUTURE_ATT_DESCRIPTION<-paste0("Using the ",ensembleClassifyResults$WINNER_NAME, " classifier model we  predict a future attrition of ",FUTURE_ATT_PERC,". This is an ", ifelse(FUTURE_ATT_PERC<FUTURE_ATT_PREVIOUS_PERC, "increase", "decrease"), " from the attrition percentage observed in the historic data, which was ", FUTURE_ATT_PREVIOUS_PERC)
+
+ATT_PREDICTIONS<-cbind(Attrition=ifelse(FUTURE_ATT==0,"No","Yes"), 
+      ID=competition_no_att$ID) %>% data.frame() %>% 
+      select(ID, Attrition)
+
+write_csv(ATT_PREDICTIONS,path='Case2PredictionsHolmes Attrition.csv')
+
+```
+
+##TO-DO 
+- BAGGING, RESAMPLE TRAINING/VALIDATION DATA SETS 
+- BOOSTING an esemble is built incrementally 
+- DIFFERENT MODELS TO ASSIGN A HUMAN-READABLE RISK FACTOR (High risk, medium risk, low risk)
